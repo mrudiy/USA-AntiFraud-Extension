@@ -9,6 +9,8 @@
 // @match        https://admin.taofortune.com/*
 // @match        https://admin.funzcity.com/*
 // @match        https://admin.fortunewheelz.com/*
+// @downloadURL  https://github.com/mrudiy/USA-AntiFraud-Extension/raw/main/USA%20Anti%20Fraud%20Extension.user.js
+// @updateURL    https://github.com/mrudiy/USA-AntiFraud-Extension/blob/main/USA%20Anti%20Fraud%20Extension.user.js
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
