@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         USA Anti Fraud Extension
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  USA Anti Fraud Extension
 // @author       Maxim Rudiy
 // @match        https://admin.funrize.com/*
