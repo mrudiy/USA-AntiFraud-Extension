@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         USA Anti Fraud Extension
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  USA Anti Fraud Extension
 // @author       Maxim Rudiy
 // @match        https://admin.funrize.com/*
@@ -9,8 +9,8 @@
 // @match        https://admin.taofortune.com/*
 // @match        https://admin.funzcity.com/*
 // @match        https://admin.fortunewheelz.com/*
+// @updateURL 	 https://github.com/mrudiy/USA-AntiFraud-Extension/raw/main/USA%20Anti%20Fraud%20Extension.user.js
 // @downloadURL  https://github.com/mrudiy/USA-AntiFraud-Extension/raw/main/USA%20Anti%20Fraud%20Extension.user.js
-// @updateURL    https://github.com/mrudiy/USA-AntiFraud-Extension/blob/main/USA%20Anti%20Fraud%20Extension.user.js
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -371,7 +371,10 @@
 
     function analyzePayments(callback) {
         const playerID = getPlayerID();
+        console.log('Player ID:', playerID);
+
         const project = getProject();
+        console.log('Project:', project);
 
         if (!project) {
             console.error('Project not found!');
@@ -379,71 +382,102 @@
         }
 
         const requestUrl = `https://admin.${project}.com/payments/paymentsItemsIn/index/?PaymentsItemsInForm%5Bsearch_login%5D=${playerID}`;
+        console.log('Request URL:', requestUrl);
 
         GM_xmlhttpRequest({
             method: 'GET',
             url: requestUrl,
             onload: function(response) {
-
+                console.log('Initial GET request response received.');
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(response.responseText, 'text/html');
 
-                const select = doc.querySelector('#newPageSize');
-                if (select) {
-                    select.value = '500';
-                    const event = new Event('change', { bubbles: true });
-                    select.dispatchEvent(event);
-                }
+                const formData = new FormData();
+                formData.append('newPageSize', '1000');
+                console.log('Form data for POST request:', new URLSearchParams(formData).toString());
 
-                setTimeout(() => {
-                    const rows = doc.querySelectorAll('tr.even, tr.odd');
-                    let totalDeposits = 0;
-                    let totalDepositsAmount = 0;
-                    let totalMoneyFromOffer = 0;
-                    let depositsWithOffer = 0;
-                    let moneyFromOfferPercentage = 0;
+                GM_xmlhttpRequest({
+                    method: 'POST',
+                    url: requestUrl,
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    data: new URLSearchParams(formData).toString(),
+                    onload: function(response) {
+                        console.log('POST request response received.');
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(response.responseText, 'text/html');
 
+                        const rows = doc.querySelectorAll('tr.odd, tr.even');
+                        console.log('Number of rows found:', rows.length);
 
-                    rows.forEach(row => {
-                        const status = row.children[2].textContent.trim();
-                        const depositAmountText = row.children[4].textContent.trim();
-                        const offerDetailsText = row.children[6].textContent.trim();
+                        let totalDeposits = 0;
+                        let totalDepositsAmount = 0;
+                        let totalMoneyFromOffer = 0;
+                        let depositsWithOffer = 0;
+                        let moneyFromOfferPercentage = 0;
 
+                        rows.forEach((row, index) => {
+                            console.log(`Processing row ${index + 1}:`, row.innerHTML);
 
-                        if (status === 'closed') {
-                            totalDeposits++;
-                            const depositAmountMatch = depositAmountText.match(/([\d.]+) USD/);
-                            const depositAmount = depositAmountMatch ? parseFloat(depositAmountMatch[1]) : 0;
+                            const status = row.querySelector('td:nth-child(3) span.label')?.textContent.trim().toLowerCase() || '';
+                            const depositAmountText = row.querySelector('td:nth-child(5) code')?.textContent.trim() || '0 USD';
+                            const offerDetailsText = row.querySelector('td:nth-child(7)')?.textContent.trim() || '';
 
-                            const entriesMatch = offerDetailsText.match(/(\d+\.?\d*) entries/);
-                            const entriesCount = entriesMatch ? parseFloat(entriesMatch[1]) : 0;
+                            console.log('Status:', status);
+                            console.log('Deposit Amount Text:', depositAmountText);
+                            console.log('Offer Details Text:', offerDetailsText);
 
-                            if (entriesCount > 0) {
-                                depositsWithOffer++;
-                                const moneyFromOffer = entriesCount - depositAmount;
+                            if (status === 'closed') {
+                                totalDeposits++;
+                                console.log('Deposit closed. Counting deposit...');
 
-                                totalDepositsAmount += depositAmount;
-                                totalMoneyFromOffer += moneyFromOffer;
-                                if (totalDepositsAmount > 0) {
-                                    moneyFromOfferPercentage = (totalMoneyFromOffer / totalDepositsAmount) * 100;
+                                const depositAmountMatch = depositAmountText.match(/([\d.]+) USD/);
+                                const depositAmount = depositAmountMatch ? parseFloat(depositAmountMatch[1]) : 0;
+                                console.log('Deposit Amount:', depositAmount);
 
+                                const entriesMatch = offerDetailsText.match(/(\d+\.?\d*) entries/);
+                                const entriesCount = entriesMatch ? parseFloat(entriesMatch[1]) : 0;
+                                console.log('Entries Count:', entriesCount);
+
+                                if (entriesCount > 0) {
+                                    depositsWithOffer++;
+                                    const moneyFromOffer = entriesCount - depositAmount;
+                                    console.log('Money from Offer:', moneyFromOffer);
+
+                                    totalDepositsAmount += depositAmount;
+                                    totalMoneyFromOffer += moneyFromOffer;
+                                    if (totalDepositsAmount > 0) {
+                                        moneyFromOfferPercentage = (totalMoneyFromOffer / totalDepositsAmount) * 100;
+                                        console.log('Money from Offer Percentage:', moneyFromOfferPercentage.toFixed(2));
+                                    }
                                 }
-
-                            } else {
-                                console.log('No entries found in offer details.');
                             }
-                        } else {
-                        }
-                    });
+                        });
 
-                    if (totalDeposits > 0) {
-                        const offerPercentage = (depositsWithOffer / totalDeposits) * 100;
-                        callback(offerPercentage.toFixed(2), totalMoneyFromOffer.toFixed(2), totalDeposits, moneyFromOfferPercentage.toFixed(2), totalDepositsAmount.toFixed(2), depositsWithOffer);
-                    } else {
-                        console.log('No deposits found.');
-                        callback(0, 0, 0);
-                    }
-                }, 1);
+                        if (totalDeposits > 0) {
+                            const offerPercentage = (depositsWithOffer / totalDeposits) * 100;
+                            console.log('Offer Percentage:', offerPercentage.toFixed(2));
+                            console.log('Total Money from Offer:', totalMoneyFromOffer.toFixed(2));
+                            console.log('Total Deposits:', totalDeposits);
+                            console.log('Money from Offer Percentage:', moneyFromOfferPercentage.toFixed(2));
+                            console.log('Total Deposits Amount:', totalDepositsAmount.toFixed(2));
+                            console.log('Deposits with Offer:', depositsWithOffer);
+
+                            callback(
+                                offerPercentage.toFixed(2),
+                                totalMoneyFromOffer.toFixed(2),
+                                totalDeposits,
+                                moneyFromOfferPercentage.toFixed(2),
+                                totalDepositsAmount.toFixed(2),
+                                depositsWithOffer
+                            );
+                        } else {
+                            console.log('No deposits found.');
+                            callback(0, 0, 0);
+                        }
+                    },
+                });
             }
         });
     }
@@ -611,7 +645,7 @@
     function getPlayerID() {
         const rows = document.querySelectorAll('tr');
         for (const row of rows) {
-            if (row.textContent.includes('Player number')) {
+            if (row.textContent.includes('Player number') || row.textContent.includes('Номер игрока')) {
                 const cells = row.querySelectorAll('td');
                 if (cells.length > 0) {
                     return cells[0].textContent.trim();
