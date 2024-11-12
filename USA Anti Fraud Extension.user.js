@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         USA Anti Fraud Extension
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  USA Anti Fraud Extension
 // @author       Maxim Rudiy
 // @match        https://admin.funrize.com/*
@@ -93,13 +93,17 @@
                                     }
                                 `;
                                     document.head.appendChild(style);
-                                    addCheckButton(TotalPA, moneyFromOfferPercentage, activityMoneyPercentage)
+                                    getPendingss().then(totalPendings => {
+                                        console.log('eto', totalPendings);
+                                        addCheckButton(TotalPA, moneyFromOfferPercentage, activityMoneyPercentage, totalPendings);
+                                    }).catch(error => {
+                                        console.error('Ошибка при получении данных:', error);
+                                    });
+
 
                                 }
                             });
                         });
-
-
 
                         getPendings(function(totalPending) {
                             const pendingInfoElement = document.getElementById('pending-info');
@@ -495,6 +499,10 @@
                             if (commentCell) {
                                 const commentText = commentCell.textContent.trim();
 
+                                if (commentText.toLowerCase().includes("change balance when exchanging")) {
+                                    return;
+                                }
+
                                 if (commentText) {
                                     const usdMatch = commentText.match(/(\d+(\.\d+)?)\s*USD/);
                                     if (usdMatch) {
@@ -523,6 +531,7 @@
         const baseURL = `https://admin.${project}.com/payments/paymentsItemsOut/index/?PaymentsItemsOutForm%5Bsearch_login%5D=${playerID}`;
 
         let totalPending = 0;
+        console.log(baseURL)
 
         GM_xmlhttpRequest({
             method: 'GET',
@@ -541,7 +550,7 @@
                 rows.forEach(row => {
                     const statusSpan = row.querySelector('span.label');
                     if (statusSpan && (statusSpan.textContent.trim() === 'pending' || statusSpan.textContent.trim() === 'review' || statusSpan.textContent.trim() === 'on_hold')) {
-                        const amountCode = row.querySelector('td:nth-child(5) code');
+                        const amountCode = row.querySelector('td:nth-child(6) code');
                         if (amountCode) {
                             const amountText = amountCode.textContent.trim().replace('USD', '').trim();
                             const amount = parseFloat(amountText.replace(',', '.'));
@@ -556,6 +565,56 @@
         });
     }
 
+    function getPendingss() {
+        return new Promise((resolve, reject) => {
+            const playerID = getPlayerID();
+            const project = getProject();
+            const baseURL = `https://admin.${project}.com/payments/paymentsItemsOut/index/?PaymentsItemsOutForm%5Bsearch_login%5D=${playerID}`;
+
+            let totalPending = 0;
+
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: baseURL,
+                onload: function(response) {
+                    try {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(response.responseText, 'text/html');
+
+                        const select = doc.querySelector('#newPageSize');
+                        if (select) {
+                            select.value = '500';
+                            const event = new Event('change', { bubbles: true });
+                            select.dispatchEvent(event);
+                        }
+
+                        const rows = doc.querySelectorAll('tr');
+                        rows.forEach(row => {
+                            const statusSpan = row.querySelector('span.label');
+                            if (statusSpan && (statusSpan.textContent.trim() === 'pending' || statusSpan.textContent.trim() === 'review' || statusSpan.textContent.trim() === 'on_hold')) {
+                                const amountCode = row.querySelector('td:nth-child(6) code');
+                                if (amountCode) {
+                                    const amountText = amountCode.textContent.trim().replace('USD', '').trim();
+                                    const amount = parseFloat(amountText.replace(',', '.'));
+                                    if (!isNaN(amount)) {
+                                        totalPending += amount;
+                                    }
+                                }
+                            }
+                        });
+                        resolve(totalPending);
+                    } catch (error) {
+                        reject(error);
+                    }
+                },
+                onerror: function() {
+                    reject('Error fetching data');
+                }
+            });
+        });
+    }
+
+
     function insertTextIntoField(text) {
         const field = document.querySelector('#gateway-method-description-visible-antifraud_manager');
         if (field) {
@@ -567,9 +626,9 @@
         }
     }
 
-    function addCheckButton(TotalPA, moneyFromOfferPercentage, activityMoneyPercentage) {
+    function addCheckButton(TotalPA, moneyFromOfferPercentage, activityMoneyPercentage, totalPendings) {
         const formatableTextDiv = document.getElementById('formatable-text-antifraud_manager');
-
+        console.log(totalPendings)
         if (formatableTextDiv) {
             const existingButton = document.getElementById('check-button');
             if (existingButton) {
@@ -585,9 +644,11 @@
                 const initials = GM_getValue(initialsKey);
                 const currentLanguage = GM_getValue(languageKey, 'російська');
                 const colorPA = TotalPA > 1 ? 'red' : 'black';
-                console.log(TotalPA, moneyFromOfferPercentage, activityMoneyPercentage)
                 let textToInsert = `${date} проверен антифрод командой/${initials}<br><b>РА: <span style="color: ${colorPA}">${TotalPA}</span> | Freemoney From Offer: ${moneyFromOfferPercentage}% | Freemoney From Activities: ${activityMoneyPercentage.toFixed(2)}%</b> `;
-
+                if (totalPendings > 1) {
+                    const balanceStyle = totalPendings > 2000 ? 'color: red;' : '';
+                    textToInsert += `<b>| На выплате:</b> <b style="${balanceStyle}">${totalPendings}$</b> | `;
+                }
                 insertTextIntoField(textToInsert);
             };
 
